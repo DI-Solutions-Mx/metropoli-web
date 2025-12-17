@@ -2,12 +2,52 @@
 //import ContactForm from '@/components/ContactForm';
 import Footer from '@/components/footer';
 import Navigation from '@/components/Navigation';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useTranslations } from '@/i18n/useTranslations';
+import { useRouter } from 'next/navigation';
 
 const ContactPage: React.FC = () => {
     const messages = useTranslations();
+    const router = useRouter();
+
+    useEffect(() => {
+        console.log("🔧 Setting up HubSpot form submission listener");
+
+        // Listener para capturar el envío del formulario embebido
+        const messageHandler = (event: MessageEvent) => {
+            // Filtrar mensajes irrelevantes
+            if (!event.data || 
+                event.data.source === 'react-devtools-bridge' ||
+                event.data.source === 'react-devtools-content-script' ||
+                event.data.source === 'react-devtools-backend-manager' ||
+                event.data.source === 'react-devtools-hook' ||
+                event.data.action === 'FB_LOG') { // Filtrar mensajes de Facebook Pixel
+                return;
+            }
+
+            // Log temporal para debugging - solo mensajes que podrían ser de HubSpot
+            console.log("📨 Message received:", event.data, "Origin:", event.origin);
+
+            // Detectar envío del formulario de HubSpot
+            if (event.data?.type === "hsFormCallback" &&
+                event.data?.eventName === "onFormSubmitted") {
+                console.log("✅ Form submitted successfully!", event.data);
+                const formId = event.data.id;
+
+                if (formId === "053cd3b5-2374-4e68-953c-5dabb2ca4323") {
+                    console.log("🎯 Redirecting to thank-you page");
+                    router.push("/thank-you");
+                }
+            }
+        };
+
+        window.addEventListener('message', messageHandler);
+
+        return () => {
+            window.removeEventListener('message', messageHandler);
+        };
+    }, [router]);
 
     return (
         <div style={
@@ -45,7 +85,7 @@ const ContactPage: React.FC = () => {
                 </div>
 
                 <div className="relative min-h-[600px]">
-                    
+
 
                     <div
                         className={`hs-form-frame transition-opacity duration-300`}
