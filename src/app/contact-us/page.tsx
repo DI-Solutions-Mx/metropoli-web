@@ -16,18 +16,28 @@ const ContactPage: React.FC = () => {
 
         // Listener para capturar el envío del formulario embebido
         const messageHandler = (event: MessageEvent) => {
-            // Filtrar mensajes irrelevantes
+            // Filtrar mensajes irrelevantes de dev tools y otros orígenes
             if (!event.data || 
                 event.data.source === 'react-devtools-bridge' ||
                 event.data.source === 'react-devtools-content-script' ||
                 event.data.source === 'react-devtools-backend-manager' ||
                 event.data.source === 'react-devtools-hook' ||
-                event.data.action === 'FB_LOG') { // Filtrar mensajes de Facebook Pixel
+                event.data.action === 'FB_LOG' ||
+                event.data.type === 'ready' || // Filtrar mensajes de Vercel Live
+                event.data.type === 'can-inline-scripts' ||
+                event.data.type === 'init-reply') {
                 return;
             }
 
-            // Log temporal para debugging - solo mensajes que podrían ser de HubSpot
-            console.log("📨 Message received:", event.data, "Origin:", event.origin);
+            // Validar que viene de HubSpot (iframe embebido)
+            const isHubSpotOrigin = event.origin.includes('hubspot') || 
+                                   event.origin.includes('hs-scripts') ||
+                                   event.origin.includes('hsforms');
+
+            // Log solo de mensajes potencialmente relevantes
+            if (event.data?.type === "hsFormCallback" || isHubSpotOrigin) {
+                console.log("📨 HubSpot message received:", event.data, "Origin:", event.origin);
+            }
 
             // Detectar envío del formulario de HubSpot
             if (event.data?.type === "hsFormCallback" &&
