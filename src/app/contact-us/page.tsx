@@ -2,61 +2,135 @@
 //import ContactForm from '@/components/ContactForm';
 import Footer from '@/components/footer';
 import Navigation from '@/components/Navigation';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { useTranslations } from '@/i18n/useTranslations';
 import { useRouter } from 'next/navigation';
 
+// Declarar el tipo global de HubSpot
+declare global {
+    interface Window {
+        hbspt?: {
+            forms: {
+                create: (options: {
+                    region: string;
+                    portalId: string;
+                    formId: string;
+                    target: string;
+                    onFormSubmitted?: () => void;
+                    onFormReady?: () => void;
+                }) => void;
+            };
+        };
+    }
+}
+
 const ContactPage: React.FC = () => {
     const messages = useTranslations();
     const router = useRouter();
+    const formContainerRef = useRef<HTMLDivElement>(null);
+    const formCreated = useRef(false);
+    const scriptLoaded = useRef(false);
 
     useEffect(() => {
-        console.log("🔧 Setting up HubSpot form submission listener");
+        console.log("🔧 Initializing HubSpot form with SDK");
 
-        // Listener para capturar el envío del formulario embebido
-        const messageHandler = (event: MessageEvent) => {
-            // Filtrar mensajes irrelevantes de dev tools y otros orígenes
-            if (!event.data || 
-                event.data.source === 'react-devtools-bridge' ||
-                event.data.source === 'react-devtools-content-script' ||
-                event.data.source === 'react-devtools-backend-manager' ||
-                event.data.source === 'react-devtools-hook' ||
-                event.data.action === 'FB_LOG' ||
-                event.data.type === 'ready' || // Filtrar mensajes de Vercel Live
-                event.data.type === 'can-inline-scripts' ||
-                event.data.type === 'init-reply') {
-                return;
-            }
+        // Función para cargar el script de HubSpot
+        const loadHubSpotScript = () => {
+            return new Promise<void>((resolve, reject) => {
+                // Verificar si ya existe el script
+                if (document.querySelector('script[src*="js.hsforms.net"]')) {
+                    console.log("📦 HubSpot script already exists");
+                    if (window.hbspt) {
+                        resolve();
+                    } else {
+                        // Esperar a que se cargue
+                        const checkInterval = setInterval(() => {
+                            if (window.hbspt) {
+                                clearInterval(checkInterval);
+                                resolve();
+                            }
+                        }, 100);
+                        
+                        setTimeout(() => {
+                            clearInterval(checkInterval);
+                            reject(new Error("Script exists but hbspt not available"));
+                        }, 5000);
+                    }
+                    return;
+                }
 
-            // Validar que viene de HubSpot (iframe embebido)
-            const isHubSpotOrigin = event.origin.includes('hubspot') || 
-                                   event.origin.includes('hs-scripts') ||
-                                   event.origin.includes('hsforms');
+                console.log("📥 Loading HubSpot script...");
+                const script = document.createElement('script');
+                script.src = 'https://js.hsforms.net/forms/embed/v2.js';
+                script.async = true;
+                script.defer = true;
+                
+                script.onload = () => {
+                    console.log("✅ HubSpot script loaded");
+                    // Esperar un momento para que se inicialice
+                    const checkInterval = setInterval(() => {
+                        if (window.hbspt) {
+                            clearInterval(checkInterval);
+                            scriptLoaded.current = true;
+                            resolve();
+                        }
+                    }, 100);
+                    
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        if (!window.hbspt) {
+                            reject(new Error("Script loaded but hbspt not available"));
+                        }
+                    }, 5000);
+                };
+                
+                script.onerror = () => {
+                    console.error("❌ Failed to load HubSpot script");
+                    reject(new Error("Failed to load script"));
+                };
+                
+                document.body.appendChild(script);
+            });
+        };
 
-            // Log solo de mensajes potencialmente relevantes
-            if (event.data?.type === "hsFormCallback" || isHubSpotOrigin) {
-                console.log("📨 HubSpot message received:", event.data, "Origin:", event.origin);
-            }
+        // Función para crear el formulario
+        const createForm = () => {
+            if (window.hbspt && formContainerRef.current && !formCreated.current) {
+                console.log("✨ Creating HubSpot form...");
+                formCreated.current = true;
 
-            // Detectar envío del formulario de HubSpot
-            if (event.data?.type === "hsFormCallback" &&
-                event.data?.eventName === "onFormSubmitted") {
-                console.log("✅ Form submitted successfully!", event.data);
-                const formId = event.data.id;
-
-                if (formId === "053cd3b5-2374-4e68-953c-5dabb2ca4323") {
-                    console.log("🎯 Redirecting to thank-you page");
-                    router.push("/thank-you");
+                try {
+                    window.hbspt.forms.create({
+                        region: "na1",
+                        portalId: "48421759",
+                        formId: "053cd3b5-2374-4e68-953c-5dabb2ca4323",
+                        target: "#hubspot-form-container",
+                        onFormReady: () => {
+                            console.log("📋 Form is ready");
+                        },
+                        onFormSubmitted: () => {
+                            console.log("✅ Form submitted successfully!");
+                            console.log("🎯 Redirecting to thank-you page...");
+                            router.push("/thank-you");
+                        }
+                    });
+                } catch (error) {
+                    console.error("❌ Error creating form:", error);
+                    formCreated.current = false;
                 }
             }
         };
 
-        window.addEventListener('message', messageHandler);
+        // Cargar script y crear formulario
+        loadHubSpotScript()
+            .then(() => {
+                createForm();
+            })
+            .catch((error) => {
+                console.error("❌ HubSpot SDK failed to load:", error);
+            });
 
-        return () => {
-            window.removeEventListener('message', messageHandler);
-        };
     }, [router]);
 
     return (
@@ -95,13 +169,10 @@ const ContactPage: React.FC = () => {
                 </div>
 
                 <div className="relative min-h-[600px]">
-
-
-                    <div
-                        className={`hs-form-frame transition-opacity duration-300`}
-                        data-region="na1"
-                        data-form-id="053cd3b5-2374-4e68-953c-5dabb2ca4323"
-                        data-portal-id="48421759"
+                    <div 
+                        id="hubspot-form-container" 
+                        ref={formContainerRef}
+                        className="transition-opacity duration-300"
                     ></div>
                 </div>
             </div>
